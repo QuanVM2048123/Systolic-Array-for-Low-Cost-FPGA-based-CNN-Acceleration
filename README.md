@@ -13,7 +13,6 @@ Design and implementation of a hardware accelerator based on a **Systolic Array*
 - [3. Block Diagram](#3-block-diagram)
 - [4. Directory Structure](#4-directory-structure)
 - [5. Environment Requirements](#5-environment-requirements)
-- [6. Build & Simulation Guide](#6-build--simulation-guide)
 - [7. Testing (Testbench)](#7-testing-testbench)
 - [8. Results / Evaluation](#8-results--evaluation)
 - [9. References](#9-references)
