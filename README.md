@@ -1,173 +1,230 @@
 # Systolic Array for Low-Cost FPGA-based CNN Acceleration
 
-Design and implementation of a hardware accelerator based on a **Systolic Array** architecture to accelerate convolution operations in Convolutional Neural Networks (CNNs), targeting low-cost, resource-constrained FPGAs.
+A modular Systolic Array-based Convolutional Neural Network (CNN) accelerator implemented in Verilog/SystemVerilog HDL, targeting low-cost FPGA platforms.
 
-> ⚠️ **Project status:** Work in progress. This README is an architecture template/scaffold, to be updated once specific modules are finalized and Verilog code is pushed.
-
----
-
-## Table of Contents
-
-- [1. Introduction](#1-introduction)
-- [2. Architecture Overview](#2-architecture-overview)
-- [3. Block Diagram](#3-block-diagram)
-- [4. Directory Structure](#4-directory-structure)
-- [5. Environment Requirements](#5-environment-requirements)
-- [7. Testing (Testbench)](#7-testing-testbench)
-- [8. Results / Evaluation](#8-results--evaluation)
-- [9. References](#9-references)
-- [10. License](#10-license)
+The project provides multiple systolic array configurations (e.g. Output-Stationary, Weight-Stationary) for convolution and matrix-multiplication acceleration, enabling architectural comparison in terms of FPGA resource utilization, throughput, and power efficiency on resource-constrained devices.
 
 ---
 
-## 1. Introduction
+## Features
 
-Convolution accounts for most of the computation time and memory bandwidth in CNNs. The **Systolic Array** architecture leverages data reuse and pipelined dataflow between Processing Elements (PEs) to:
-
-- Reduce off-chip memory accesses
-- Increase computational throughput through parallelism
-- Lower power consumption, making it suitable for low-cost FPGAs with limited DSP/BRAM resources
-
-**Project goals:**
-- [ ] Design a configurable-size systolic PE array
-- [ ] Support at least one type of CNN layer (Conv2D), extensible to others (pooling, FC...)
-- [ ] Optimize resource usage (LUT, DSP, BRAM) to fit on low-cost FPGAs (e.g., Xilinx Artix-7 / Intel Cyclone IV-V)
-- [ ] Evaluate performance (operating frequency, throughput, power consumption)
+- Systolic Array-based Matrix Multiplication / Convolution
+- Configurable Array Size (e.g. NxN Processing Elements)
+- Support for Quantized Data Types (INT8 / INT16, optionally FP16)
+- Weight-Stationary and/or Output-Stationary Dataflow
+- On-chip Line Buffer / Weight Buffer for Data Reuse
+- Modular RTL Architecture (PE array decoupled from control/buffering)
+- FPGA-Oriented Resource & Timing Evaluation
+- Low-Cost FPGA Target (small LUT/BRAM/DSP footprint)
 
 ---
 
-## 2. Architecture Overview
+## Project Overview
 
-> This section is a general scaffold — fill in the specifics once the team's actual design is finalized.
+Unlike monolithic CNN accelerator designs, this project adopts a modular architecture in which the Processing Element (PE) array, data feeding logic (activation/weight buffers), and control/scheduling logic are decomposed into independent, reusable modules.
 
-The system consists of the following main components:
+The systolic array core and the memory/control subsystem maintain independent datapaths while converging at shared interfaces:
 
-| Component | Role |
-|---|---|
-| **Systolic PE Array** | Grid of Processing Elements (PEs), each performing a multiply-accumulate (MAC) operation, with data flowing in a pipeline between neighboring PEs |
-| **Weight/Input Buffer** | Buffer (BRAM/FIFO) storing weights and image/feature map data before feeding the PE array |
-| **Controller / FSM** | Controls dataflow, synchronizes weight loading, triggers computation, reads out results |
-| **Output Accumulator** | Accumulates/writes convolution results to memory or the next layer |
-| **Interface (AXI / custom)** | Interface between the accelerator and the host system (CPU/soft-core or DMA) |
+- `pe_array.v` — the core systolic PE mesh
+- `buffer_controller.v` — activation/weight feeding and address generation
+- `accumulator.v` — partial sum accumulation and output packing
 
-**Dataflow (choose one, fill in once the design is finalized):**
-- *Weight Stationary*: weights stay fixed in each PE while input data and results move through the array → reduces repeated weight memory reads.
-- *Output Stationary*: partial sums stay fixed at each PE while input data and weights move through the array.
-- *Row/Column Stationary*: combines reuse along rows or columns.
+This organization improves maintainability, module reusability, and makes it easier to swap dataflow strategies (Weight-Stationary vs Output-Stationary) without rewriting the whole datapath.
 
 ---
 
-## 3. Block Diagram
+# Top-Level Architecture
 
-```
-                ┌─────────────────────────────┐
-                │        Controller / FSM      │
-                └───────┬──────────────┬──────┘
-                        │              │
-              ┌─────────▼───┐   ┌──────▼────────┐
-              │ Weight Buffer│   │ Input Buffer   │
-              │   (BRAM)     │   │   (BRAM)       │
-              └─────────┬───┘   └──────┬────────┘
-                        │              │
-                ┌───────▼──────────────▼───────┐
-                │                               │
-                │        Systolic PE Array      │
-                │   ┌────┬────┬────┬────┐       │
-                │   │ PE │ PE │ PE │ PE │  ...  │
-                │   ├────┼────┼────┼────┤       │
-                │   │ PE │ PE │ PE │ PE │  ...  │
-                │   └────┴────┴────┴────┘       │
-                │                               │
-                └───────────────┬───────────────┘
-                                │
-                        ┌───────▼────────┐
-                        │ Output/Accum   │
-                        │    Buffer      │
-                        └───────┬────────┘
-                                │
-                        ┌───────▼────────┐
-                        │  AXI/Interface │
-                        └────────────────┘
-```
+<p align="center">
+<img src="doc/images/Architecture_Block_Diagram.png" width="850">
+</p>
 
-*(This is a temporary ASCII diagram — replace with a proper diagram (draw.io / Visio / Vivado Block Design) and add the image to `docs/img/` once the architecture is finalized.)*
+The accelerator integrates:
+
+- Systolic PE Array (NxN Processing Elements)
+- Activation Buffer (line buffer / FIFO)
+- Weight Buffer
+- Accumulator / Output Buffer
+- Control Unit (FSM for load/compute/drain phases)
+
+All modules interface through a shared control and data bus before producing the final feature map output.
 
 ---
 
-## 4. Directory Structure
+# Processing Element (PE) Architecture
 
-```
-.
-├── README.md
-├── LICENSE
-├── rtl/                  # Verilog/SystemVerilog source code
-│   ├── pe.v               # Processing Element
-│   ├── systolic_array.v   # PE array
-│   ├── controller.v       # Control FSM
-│   ├── buffer.v           # Data buffer
-│   └── top.v               # Top-level module
-├── tb/                   # Testbenches
-│   ├── tb_pe.v
-│   ├── tb_systolic_array.v
-│   └── tb_top.v
-├── sim/                  # Simulation files, waveforms (.wcfg, .do)
-├── constraints/          # Timing/pin constraint files (.xdc / .qsf)
-├── docs/                 # Reports, block diagrams, design documentation
-│   └── img/
-└── scripts/              # Build scripts (TCL for Vivado/Quartus)
+<p align="center">
+<img src="doc/images/Architecture_PE_unit.png" width="850">
+</p>
+
+Dataflow per PE (example: Weight-Stationary)
+
+```text
+Load Weight (stationary)
+      │
+Receive Activation (from West)
+      │
+MAC (Multiply-Accumulate)
+      │
+Forward Activation (to East)
+      │
+Forward Partial Sum (to South)
 ```
 
 ---
 
-## 5. Environment Requirements
+# Systolic Array Dataflow
 
-| Tool | Recommended Version | Notes |
-|---|---|---|
-| Xilinx Vivado | 2020.2 or later | If targeting Xilinx FPGAs (Artix-7, Zynq...) |
-| Intel Quartus Prime | 20.1 or later | If targeting Intel FPGAs (Cyclone IV/V...) |
-| ModelSim / QuestaSim | — | RTL simulation (optional; the bundled simulator in Vivado/Quartus also works) |
-| Git | — | Source control |
+<p align="center">
+<img src="doc/images/Architecture_Systolic_Dataflow.png" width="850">
+</p>
 
----
+Overall computation pipeline
 
-## 7. Testing (Testbench)
-
-- Each RTL module should have a corresponding testbench in `tb/` (e.g., `pe.v` ↔ `tb_pe.v`)
-- Testbenches should verify:
-  - Basic PE functionality (MAC operation, weight loading, reset)
-  - Dataflow through the PE array (correct order, correct pipeline latency)
-  - Comparison of hardware convolution results against a software reference (Python/NumPy) on the same input/weight dataset
-
-**Suggested testing workflow:**
-1. Generate random or real-dataset (e.g., MNIST) input/weight data in Python
-2. Export to `.txt`/`.mem` files to load into the Verilog testbench via `$readmemh`
-3. Compute reference results using NumPy
-4. Compare RTL simulation output against the reference results, logging any mismatches to a file
-
----
-
-## 8. Results / Evaluation
-
-*(Fill in once actual synthesis results are available)*
-
-| Metric | Value |
-|---|---|
-| Target FPGA | — |
-| Max operating frequency (MHz) | — |
-| LUT/FF/DSP/BRAM utilization | — |
-| Power consumption (W) | — |
-| Throughput (GOPS / images per second) | — |
-| Accuracy vs. software model | — |
+```text
+Weight Load Phase
+      │
+Activation Streaming
+      │
+MAC Propagation (row/column-wise)
+      │
+Partial Sum Accumulation
+      │
+Drain / Output Readout
+      │
+Quantization / Requantization
+      │
+Output Feature Map
+```
 
 ---
 
-## 9. References
+# Repository Structure
 
-- H.T. Kung, "Why Systolic Architectures?", IEEE Computer, 1982.
-- Papers on Systolic Array-based CNN acceleration on FPGA (add a specific list in `docs/`)
+```text
+src
+│
+├── common
+│   ├── cnn_defs.v
+│   ├── quantizer.v
+│   └── accumulator.v
+│
+├── pe_array
+│   ├── pe_unit.v
+│   ├── pe_row.v
+│   └── pe_array_top.v
+│
+├── buffer_controller
+│   ├── activation_buffer.v
+│   ├── weight_buffer.v
+│   └── addr_gen.v
+│
+├── control_unit
+│   ├── fsm_controller.v
+│   └── config_regs.v
+│
+└── cnn_accel_top.v
+```
 
 ---
 
-## 10. License
+# Module Description
 
-Released under the [MIT License](./LICENSE).
+## Common Modules
+
+| Module | Description |
+|---------|-------------|
+| cnn_defs | Global parameters (array size, data width, quantization) |
+| quantizer | Requantization / activation scaling |
+| accumulator | Partial sum accumulation and output packing |
+
+---
+
+## PE Array Modules
+
+| Module | Function |
+|---------|----------|
+| pe_unit | Single Processing Element (MAC + forwarding registers) |
+| pe_row | Row of PEs with horizontal/vertical interconnect |
+| pe_array_top | Full NxN systolic array integration |
+
+---
+
+## Buffer / Control Modules
+
+| Module | Function |
+|---------|----------|
+| activation_buffer | Line buffer feeding activations into the array |
+| weight_buffer | Local weight storage feeding the array |
+| addr_gen | Address generation for buffer read/write |
+| fsm_controller | Load / Compute / Drain phase control |
+| config_regs | Runtime configuration (kernel size, stride, etc.) |
+
+---
+
+# FPGA Evaluation
+
+Target FPGA
+
+- (e.g. Xilinx Zynq-7010 / Artix-7 / Lattice ECP5 — điền theo board thực tế)
+- Development Board: ___
+- Toolchain: Vivado / Quartus / Yosys, version ___
+
+Clock Constraint
+
+- ___ ns (___ MHz)
+
+---
+
+## Resource Utilization (example table — cập nhật số liệu thật sau khi synth)
+
+| Configuration | LUT | FF | DSP | BRAM | WNS (ns) |
+|--------------|----:|---:|----:|-----:|---------:|
+| 4x4 Array | | | | | |
+| 8x8 Array | | | | | |
+| 16x16 Array | | | | | |
+
+---
+
+## Throughput / Performance (example table)
+
+| Configuration | Clock Freq (MHz) | GOPS | Power (W) | GOPS/W |
+|--------------|------------------:|-----:|----------:|-------:|
+| 4x4 Array | | | | |
+| 8x8 Array | | | | |
+| 16x16 Array | | | | |
+
+---
+
+## Experimental Observations
+
+### PE Array
+
+- (Ghi nhận về LUT/FF khi tăng kích thước mảng systolic)
+- (Ảnh hưởng của array size đến tần số clock tối đa)
+- (Trade-off giữa reuse dữ liệu và độ phức tạp buffer)
+
+### System-Level
+
+- (DSP usage theo kích thước mảng)
+- (Bottleneck: buffer bandwidth vs PE compute throughput)
+- (So sánh Weight-Stationary vs Output-Stationary nếu có triển khai cả hai)
+
+---
+
+# Future Work
+
+- Support for Depthwise / Grouped Convolution
+- Sparsity-aware Skipping (Zero-skipping)
+- Mixed-Precision (INT4/INT8) Support
+- On-chip Weight Compression
+- Multi-layer Pipelining across Convolutional Layers
+- Integration with a Full CNN Inference Pipeline (e.g. via RISC-V host)
+
+---
+
+# License
+
+MIT License
+
+---
