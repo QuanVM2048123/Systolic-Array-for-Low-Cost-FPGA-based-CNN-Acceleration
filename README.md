@@ -102,26 +102,22 @@ Output Feature Map
 # Repository Structure
 
 ```text
-├── README.md
-├── LICENSE
-├── rtl/                          # Verilog/SystemVerilog source code
-│   ├── pe.v                      # Processing Element
-│   ├── systolic_array.v          # PE array
-│   ├── controller.v             # Control FSM
-│   ├── buffer.v                 # Data buffer
-│   └── top.v                    # Top-level module
-│
-├── tb/                           # Testbenches
-│   ├── tb_pe.v
-│   ├── tb_systolic_array.v
-│   └── tb_top.v
-│
-├── sim/                          # Simulation files, waveforms (.wcfg, .do)
-├── constraints/                  # Timing/pin constraint files (.xdc / .qsf)
-├── docs/                         # Reports, block diagrams, design documentation
-│   └── img/
-│
-└── scripts/                      # Build scripts (TCL for Vivado/Quartus)
+references/
+│   └── README.md
+
+report/
+│   └── paper
+
+rtl/
+│   ├── pe.v
+│   ├── skew.v
+│   └── systolic_array.v
+
+testbech/
+│   └── pe
+
+LICENSE
+README.md
 ```
 
 ---
