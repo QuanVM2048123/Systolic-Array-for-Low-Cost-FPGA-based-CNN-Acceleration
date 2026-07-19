@@ -54,7 +54,8 @@ All modules interface through a shared control and data bus before producing the
 # Processing Element (PE) Architecture
 
 <p align="center">
-<img src="doc/images/Architecture_PE_unit.png" width="850">
+<img width="1440" height="800" alt="image" src="https://github.com/user-attachments/assets/8df8d1cc-b5bc-4d40-8f94-d85c2ea8b58e" />
+
 </p>
 
 Dataflow per PE (example: Weight-Stationary)
