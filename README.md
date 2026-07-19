@@ -47,32 +47,11 @@ Synchronous, DSP-friendly MAC implementation suitable for resource-constrained F
 
 Target FPGA
 
-- (e.g. Xilinx Zynq-7010 / Artix-7 / Lattice ECP5 — điền theo board thực tế)
 - Development Board: ___
-- Toolchain: Vivado / Quartus / Yosys, version ___
 
 Clock Constraint
 
 - ___ ns (___ MHz)
 
 ---
-
-## Resource Utilization (example table — cập nhật số liệu thật sau khi synth)
-
-| Configuration | LUT | FF | DSP | BRAM | WNS (ns) |
-|--------------|----:|---:|----:|-----:|---------:|
-| 4x4 Array | | | | | |
-| 8x8 Array | | | | | |
-| 16x16 Array | | | | | |
-
----
-
-## Throughput / Performance (example table)
-
-| Configuration | Clock Freq (MHz) | GOPS | Power (W) | GOPS/W |
-|--------------|------------------:|-----:|----------:|-------:|
-| 4x4 Array | | | | |
-| 8x8 Array | | | | |
-| 16x16 Array | | | | |
-
 ---
