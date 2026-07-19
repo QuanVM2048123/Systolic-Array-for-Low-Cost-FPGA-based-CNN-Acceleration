@@ -1,66 +1,120 @@
 module systolic_array #(
-    parameter ROWS      = 4,
-    parameter COLS      = 4,
-    parameter ACT_WIDTH = 8,   // bit width of each North/South element
-    parameter SUM_WIDTH = 24   // bit width of each West/East element
+    parameter N          = 4,
+    parameter DATA_WIDTH = 8,
+    parameter ACC_WIDTH  = 32
 ) (
-    input  wire                              clk,
-    input  wire                              rst,
-    input  wire                              load_weight,   // Global load signal
+    input  wire                             clk,
+    input  wire                             rst_n,       // active-low, matches pe.v
+    input  wire                             clear_acc,
  
-    input  wire [COLS*ACT_WIDTH-1:0]         in_n,          // COLS inputs from North
-    input  wire [ROWS*SUM_WIDTH-1:0]         in_w,          // ROWS inputs from West
+    input  wire signed [N*DATA_WIDTH-1:0]   a_in,        // N activations, packed: a_in[k] = row k
+    input  wire signed [N*DATA_WIDTH-1:0]   b_in,        // N weights,     packed: b_in[k] = col k
  
-    output wire [COLS*ACT_WIDTH-1:0]         out_s,         // COLS outputs to South
-    output wire [ROWS*SUM_WIDTH-1:0]         out_e          // ROWS outputs to East
+    output wire signed [N*N*ACC_WIDTH-1:0]  acc_out      // N*N accumulators, packed row-major:
+                                                          // acc_out for (row r, col c) is at
+                                                          // bit offset (r*N+c)*ACC_WIDTH
 );
  
-    // These 2D arrays store the connections BETWEEN PEs.
-    // conn_n[i][j] : North input for PE at row i, col j (conn_n[0][*] = external in_n)
-    // conn_w[i][j] : West input for PE at row i, col j  (conn_w[*][0] = external in_w)
-    wire signed [ACT_WIDTH-1:0] conn_n [ROWS:0][COLS-1:0];
-    wire signed [SUM_WIDTH-1:0] conn_w [ROWS-1:0][COLS:0];
+    // Unpack the flat external buses into per-row / per-column signals.
+    wire signed [DATA_WIDTH-1:0] a_ext [0:N-1];
+    wire signed [DATA_WIDTH-1:0] b_ext [0:N-1];
  
-    genvar i, j;
+    genvar k;
     generate
-        // Map the flat external in_n bus onto the top row (row 0)
-        for (j = 0; j < COLS; j = j + 1) begin : INPUT_MAP_N
-            assign conn_n[0][j] = in_n[ACT_WIDTH*j +: ACT_WIDTH];
+        for (k = 0; k < N; k = k + 1) begin : UNPACK_EXT
+            assign a_ext[k] = a_in[DATA_WIDTH*k +: DATA_WIDTH];
+            assign b_ext[k] = b_in[DATA_WIDTH*k +: DATA_WIDTH];
         end
+    endgenerate
  
-        // Map the flat external in_w bus onto the left column (col 0)
-        for (i = 0; i < ROWS; i = i + 1) begin : INPUT_MAP_W
-            assign conn_w[i][0] = in_w[SUM_WIDTH*i +: SUM_WIDTH];
-        end
+    // conn_a[r][c] : a_in of PE(r,c).   conn_a[r][N] is the row's unused output edge.
+    // conn_b[r][c] : b_in of PE(r,c).   conn_b[N][c] is the column's unused output edge.
+    // acc_link[r][c] : acc_out of PE(r,c).
+    wire signed [DATA_WIDTH-1:0] conn_a   [0:N-1][0:N];
+    wire signed [DATA_WIDTH-1:0] conn_b   [0:N][0:N-1];
+    wire signed [ACC_WIDTH-1:0]  acc_link [0:N-1][0:N-1];
  
-        // Instantiate the ROWS x COLS grid of PEs
-        for (i = 0; i < ROWS; i = i + 1) begin : ROW_LOOP
-            for (j = 0; j < COLS; j = j + 1) begin : COL_LOOP
+    // Skew shift-register chains. Row r needs r stages, col c needs c stages.
+    reg signed [DATA_WIDTH-1:0] a_skew [0:N-1][0:N-2];
+    reg signed [DATA_WIDTH-1:0] b_skew [0:N-1][0:N-2];
  
-                pe #(
-                    .ACT_WIDTH (ACT_WIDTH),
-                    .SUM_WIDTH (SUM_WIDTH)
-                ) pe_inst (
-                    .clk         (clk),
-                    .rst         (rst),
-                    .load_weight (load_weight),
-                    .in_n        (conn_n[i][j]),        // North input  (row i, col j)
-                    .in_w        (conn_w[i][j]),        // West input   (row i, col j)
-                    .out_s       (conn_n[i+1][j]),       // South output -> North input of row i+1
-                    .out_e       (conn_w[i][j+1])        // East output  -> West input of col j+1
-                );
+    genvar r, c, s;
  
+    // ------------------------------------------------------------------
+    // Activation skew: delay row r by r cycles, feed PE(r,0).a_in
+    // ------------------------------------------------------------------
+    generate
+        for (r = 0; r < N; r = r + 1) begin : A_SKEW_ROW
+            if (r == 0) begin : NO_DELAY
+                assign conn_a[0][0] = a_ext[0];
+            end else begin : DELAY_CHAIN
+                for (s = 0; s < r; s = s + 1) begin : STAGE
+                    always @(posedge clk or negedge rst_n) begin
+                        if (!rst_n)
+                            a_skew[r][s] <= {DATA_WIDTH{1'b0}};
+                        else if (s == 0)
+                            a_skew[r][s] <= a_ext[r];
+                        else
+                            a_skew[r][s] <= a_skew[r][s-1];
+                    end
+                end
+                assign conn_a[r][0] = a_skew[r][r-1];
             end
         end
+    endgenerate
  
-        // Map the bottom row's South outputs (row ROWS) onto the flat out_s bus
-        for (j = 0; j < COLS; j = j + 1) begin : OUTPUT_MAP_S
-            assign out_s[ACT_WIDTH*j +: ACT_WIDTH] = conn_n[ROWS][j];
+    // ------------------------------------------------------------------
+    // Weight skew: delay column c by c cycles, feed PE(0,c).b_in
+    // ------------------------------------------------------------------
+    generate
+        for (c = 0; c < N; c = c + 1) begin : B_SKEW_COL
+            if (c == 0) begin : NO_DELAY
+                assign conn_b[0][0] = b_ext[0];
+            end else begin : DELAY_CHAIN
+                for (s = 0; s < c; s = s + 1) begin : STAGE
+                    always @(posedge clk or negedge rst_n) begin
+                        if (!rst_n)
+                            b_skew[c][s] <= {DATA_WIDTH{1'b0}};
+                        else if (s == 0)
+                            b_skew[c][s] <= b_ext[c];
+                        else
+                            b_skew[c][s] <= b_skew[c][s-1];
+                    end
+                end
+                assign conn_b[0][c] = b_skew[c][c-1];
+            end
         end
+    endgenerate
  
-        // Map the rightmost column's East outputs (col COLS) onto the flat out_e bus
-        for (i = 0; i < ROWS; i = i + 1) begin : OUTPUT_MAP_E
-            assign out_e[SUM_WIDTH*i +: SUM_WIDTH] = conn_w[i][COLS];
+    // ------------------------------------------------------------------
+    // The N x N grid of PEs
+    // ------------------------------------------------------------------
+    generate
+        for (r = 0; r < N; r = r + 1) begin : ROWS
+            for (c = 0; c < N; c = c + 1) begin : COLS
+                pe #(
+                    .DATA_WIDTH (DATA_WIDTH),
+                    .ACC_WIDTH  (ACC_WIDTH)
+                ) pe_inst (
+                    .clk       (clk),
+                    .rst_n     (rst_n),
+                    .clear_acc (clear_acc),
+                    .a_in      (conn_a[r][c]),
+                    .b_in      (conn_b[r][c]),
+                    .a_out     (conn_a[r][c+1]),
+                    .b_out     (conn_b[r+1][c]),
+                    .acc_out   (acc_link[r][c])
+                );
+            end
+        end
+    endgenerate
+ 
+    // Pack all N*N accumulators onto the flat acc_out bus, row-major.
+    generate
+        for (r = 0; r < N; r = r + 1) begin : PACK_ACC_ROW
+            for (c = 0; c < N; c = c + 1) begin : PACK_ACC_COL
+                assign acc_out[(r*N+c)*ACC_WIDTH +: ACC_WIDTH] = acc_link[r][c];
+            end
         end
     endgenerate
  
