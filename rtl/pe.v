@@ -1,4 +1,4 @@
-module pe_mac #(
+module pe #(
     parameter DATA_WIDTH = 8,          // do rong du lieu dau vao (a, b)
     parameter ACC_WIDTH  = 32          // do rong thanh ghi tich luy (c)
 ) (
@@ -14,21 +14,30 @@ module pe_mac #(
     output reg  signed [ACC_WIDTH-1:0]   acc_out       // ket qua tich luy cua PE nay
 );
 
+    reg signed [15:0] a_reg, b_reg;
+    (* use_dsp = "yes" *) wire signed [ACC_WIDTH-1:0] product;
+    
+    assign product = (a_reg * b_reg);
+    
+    
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
+            a_reg <= {DATA_WIDTH{1'b0}};
+            b_reg <= {DATA_WIDTH{1'b0}};
             a_out <= {DATA_WIDTH{1'b0}};
             b_out <= {DATA_WIDTH{1'b0}};
             acc_out <= {ACC_WIDTH{1'b0}};
         end else begin
+            a_reg <= a_in;
+            b_reg <= b_in;
             // chuyen tiep du lieu sang PE lang gieng (pipeline 1 chu ky)
-            a_out <= a_in;
-            b_out <= b_in;
-
-            // MAC: neu clear_acc thi bat dau tich luy moi, nguoc lai cong don
-            if (clear_acc)
-                acc_out <= a_in * b_in;
-            else
-                acc_out <= acc_out + (a_in * b_in);
+            a_out <= a_reg;
+            b_out <= b_reg;
+            
+            acc_out <= acc_out + product;
+            if (clear_acc) begin
+                acc_out <= {ACC_WIDTH{1'b0}};
+            end
         end
     end
 
