@@ -21,16 +21,20 @@ The project provides multiple systolic array configurations (e.g. Output-Station
 
 ## Project Overview
 
-Unlike monolithic CNN accelerator designs, this project adopts a modular architecture in which the Processing Element (PE) array, data feeding logic (activation/weight buffers), and control/scheduling logic are decomposed into independent, reusable modules.
+Systolic Array for Low-Cost FPGA-based CNN Acceleration
+A Verilog hardware design implementing an N×N systolic array using an output-stationary dataflow, built to accelerate matrix multiplication — the core computation behind convolution and fully-connected layers in CNNs. The design targets low-cost FPGA platforms, aiming for efficient use of limited DSP resources.
+Core architecture:
 
-The systolic array core and the memory/control subsystem maintain independent datapaths while converging at shared interfaces:
+PE (Processing Element) – the basic compute unit, performing multiply-accumulate (MAC) operations and forwarding data to neighboring PEs.
+Systolic Array – an N×N grid of PEs, where activations flow row-wise (left→right) and weights flow column-wise (top→bottom), maximizing data reuse between adjacent PEs.
+Skew Buffer – delays input rows/columns by the appropriate number of cycles so data arrives at each PE in sync, forming the diagonal wavefront needed for correct systolic computation.
+Top module – integrates the full pipeline: takes in raw input data, applies skewing automatically, feeds the systolic array, and outputs the accumulated results.
 
-- `pe_array.v` — the core systolic PE mesh
-- `buffer_controller.v` — activation/weight feeding and address generation
-- `accumulator.v` — partial sum accumulation and output packing
+Highlights:
 
-This organization improves maintainability, module reusability, and makes it easier to swap dataflow strategies (Weight-Stationary vs Output-Stationary) without rewriting the whole datapath.
-
+Fully parameterized (array size N, data width, accumulator width) for easy scaling
+Modular design with clean separation between PE, array, and skew logic
+Synchronous, DSP-friendly MAC implementation suitable for resource-constrained FPGAs
 ---
 
 # Top-Level Architecture
