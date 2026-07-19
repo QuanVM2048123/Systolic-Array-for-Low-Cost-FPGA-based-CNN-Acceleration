@@ -212,7 +212,7 @@ Clock Constraint
 - Support for Depthwise / Grouped Convolution
 - Sparsity-aware Skipping (Zero-skipping)
 - Mixed-Precision (INT4/INT8) Support
-- On-chip Weight Compression
+- On-chip Weight Compression 
 - Multi-layer Pipelining across Convolutional Layers
 - Integration with a Full CNN Inference Pipeline (e.g. via RISC-V host)
 
