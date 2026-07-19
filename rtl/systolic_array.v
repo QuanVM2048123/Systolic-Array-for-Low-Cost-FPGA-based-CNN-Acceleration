@@ -11,8 +11,8 @@ module systolic_array #(
     input  wire signed [N*DATA_WIDTH-1:0]   b_in,        // N weights,     packed: b_in[k] = col k
  
     output wire signed [N*N*ACC_WIDTH-1:0]  acc_out      // N*N accumulators, packed row-major:
-                                                          // acc_out for (row r, col c) is at
-                                                          // bit offset (r*N+c)*ACC_WIDTH
+                                                          // acc(row r, col c) at bit offset
+                                                          // (r*N+c)*ACC_WIDTH
 );
  
     // Unpack the flat external buses into per-row / per-column signals.
@@ -34,55 +34,17 @@ module systolic_array #(
     wire signed [DATA_WIDTH-1:0] conn_b   [0:N][0:N-1];
     wire signed [ACC_WIDTH-1:0]  acc_link [0:N-1][0:N-1];
  
-    // Skew shift-register chains. Row r needs r stages, col c needs c stages.
-    reg signed [DATA_WIDTH-1:0] a_skew [0:N-1][0:N-2];
-    reg signed [DATA_WIDTH-1:0] b_skew [0:N-1][0:N-2];
- 
-    genvar r, c, s;
+    genvar r, c;
  
     // ------------------------------------------------------------------
-    // Activation skew: delay row r by r cycles, feed PE(r,0).a_in
+    // Wire external inputs straight onto the array's left/top boundary
     // ------------------------------------------------------------------
     generate
-        for (r = 0; r < N; r = r + 1) begin : A_SKEW_ROW
-            if (r == 0) begin : NO_DELAY
-                assign conn_a[0][0] = a_ext[0];
-            end else begin : DELAY_CHAIN
-                for (s = 0; s < r; s = s + 1) begin : STAGE
-                    always @(posedge clk or negedge rst_n) begin
-                        if (!rst_n)
-                            a_skew[r][s] <= {DATA_WIDTH{1'b0}};
-                        else if (s == 0)
-                            a_skew[r][s] <= a_ext[r];
-                        else
-                            a_skew[r][s] <= a_skew[r][s-1];
-                    end
-                end
-                assign conn_a[r][0] = a_skew[r][r-1];
-            end
+        for (r = 0; r < N; r = r + 1) begin : ROW_EDGE
+            assign conn_a[r][0] = a_ext[r];
         end
-    endgenerate
- 
-    // ------------------------------------------------------------------
-    // Weight skew: delay column c by c cycles, feed PE(0,c).b_in
-    // ------------------------------------------------------------------
-    generate
-        for (c = 0; c < N; c = c + 1) begin : B_SKEW_COL
-            if (c == 0) begin : NO_DELAY
-                assign conn_b[0][0] = b_ext[0];
-            end else begin : DELAY_CHAIN
-                for (s = 0; s < c; s = s + 1) begin : STAGE
-                    always @(posedge clk or negedge rst_n) begin
-                        if (!rst_n)
-                            b_skew[c][s] <= {DATA_WIDTH{1'b0}};
-                        else if (s == 0)
-                            b_skew[c][s] <= b_ext[c];
-                        else
-                            b_skew[c][s] <= b_skew[c][s-1];
-                    end
-                end
-                assign conn_b[0][c] = b_skew[c][c-1];
-            end
+        for (c = 0; c < N; c = c + 1) begin : COL_EDGE
+            assign conn_b[0][c] = b_ext[c];
         end
     endgenerate
  
