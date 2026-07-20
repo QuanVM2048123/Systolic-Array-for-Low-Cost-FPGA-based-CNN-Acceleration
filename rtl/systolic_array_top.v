@@ -1,9 +1,9 @@
 `timescale 1ns/1ps
 
 module systolic_array_top #(
-    parameter ROWS = 8,
-    parameter COLS = 8,
-    parameter K    = 8,
+    parameter ROWS = 4,
+    parameter COLS = 4,
+    parameter K    = 4,
     parameter DW   = 8
 ) (
     input  wire clk,
