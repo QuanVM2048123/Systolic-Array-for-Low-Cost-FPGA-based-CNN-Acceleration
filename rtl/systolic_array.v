@@ -1,83 +1,139 @@
+`timescale 1ns/1ps
+
+// NOTE ON FLATTENING:
+//   A_flat[(r*K+k)*DW +: DW]            == original A[r][k]
+//   B_flat[(k*COLS+c)*DW +: DW]         == original B[k][c]
+//   C_flat[(r*COLS+c)*ACC_DW +: ACC_DW] == original C[r][c]
+
 module systolic_array #(
-    parameter N          = 4,
-    parameter DATA_WIDTH = 8,
-    parameter ACC_WIDTH  = 32
+    parameter ROWS = 8,
+    parameter COLS = 8,
+    parameter K    = 8,
+    parameter DW   = 8
 ) (
-    input  wire                             clk,
-    input  wire                             rst_n,       // active-low, matches pe.v
-    input  wire                             clear_acc,
- 
-    input  wire signed [N*DATA_WIDTH-1:0]   a_in,        // N activations, packed: a_in[k] = row k
-    input  wire signed [N*DATA_WIDTH-1:0]   b_in,        // N weights,     packed: b_in[k] = col k
- 
-    output wire signed [N*N*ACC_WIDTH-1:0]  acc_out      // N*N accumulators, packed row-major:
-                                                          // acc(row r, col c) at bit offset
-                                                          // (r*N+c)*ACC_WIDTH
+    input  wire clk,
+    input  wire rst_n,
+    input  wire start,
+    input  wire clear,
+
+    input  wire signed [ROWS*K*DW-1:0]        A_flat,
+    input  wire signed [K*COLS*DW-1:0]        B_flat,
+
+    output wire signed [ROWS*COLS*ACC_DW-1:0] C_flat,
+    output wire done
 );
- 
-    // Unpack the flat external buses into per-row / per-column signals.
-    wire signed [DATA_WIDTH-1:0] a_ext [0:N-1];
-    wire signed [DATA_WIDTH-1:0] b_ext [0:N-1];
- 
-    genvar k;
+
+    localparam TOTAL_CYCLES = ROWS + COLS + K - 2;
+    localparam ACC_DW       = 2*DW + $clog2(K);
+    localparam TOTCYC_W     = $clog2(TOTAL_CYCLES+1);
+
+    wire signed [ROWS*DW-1:0] SKEW_A_flat;
+    wire signed [COLS*DW-1:0] SKEW_B_flat;
+    wire [ROWS-1:0] valA;
+    wire [COLS-1:0] valB;
+
+    wire signed [DW-1:0] SKEW_A [0:ROWS-1];
+    wire signed [DW-1:0] SKEW_B [0:COLS-1];
+
+    wire signed [DW-1:0]     pe_a   [0:ROWS-1][0:COLS-1];
+    wire signed [DW-1:0]     pe_b   [0:ROWS-1][0:COLS-1];
+    wire                     valOut [0:ROWS-1][0:COLS-1];
+    wire signed [ACC_DW-1:0] C      [0:ROWS-1][0:COLS-1];
+
+    wire skew_done; // unused, kept for parity with original (lint-off equivalent)
+
+    skew #(
+        .ROWS(ROWS),
+        .COLS(COLS),
+        .K(K),
+        .DW(DW)
+    ) skew_UUT (
+        .clk(clk),
+        .rst_n(rst_n),
+        .start(start),
+
+        .A_MAT_flat(A_flat),
+        .B_MAT_flat(B_flat),
+
+        .SKEWED_A_flat(SKEW_A_flat),
+        .SKEWED_B_flat(SKEW_B_flat),
+        .valid_a(valA),
+        .valid_b(valB),
+        .done(skew_done)
+    );
+
+    genvar gu;
     generate
-        for (k = 0; k < N; k = k + 1) begin : UNPACK_EXT
-            assign a_ext[k] = a_in[DATA_WIDTH*k +: DATA_WIDTH];
-            assign b_ext[k] = b_in[DATA_WIDTH*k +: DATA_WIDTH];
+        for (gu = 0; gu < ROWS; gu = gu + 1) begin : UNPACK_A
+            assign SKEW_A[gu] = SKEW_A_flat[gu*DW +: DW];
+        end
+        for (gu = 0; gu < COLS; gu = gu + 1) begin : UNPACK_B
+            assign SKEW_B[gu] = SKEW_B_flat[gu*DW +: DW];
         end
     endgenerate
- 
-    // conn_a[r][c] : a_in of PE(r,c).   conn_a[r][N] is the row's unused output edge.
-    // conn_b[r][c] : b_in of PE(r,c).   conn_b[N][c] is the column's unused output edge.
-    // acc_link[r][c] : acc_out of PE(r,c).
-    wire signed [DATA_WIDTH-1:0] conn_a   [0:N-1][0:N];
-    wire signed [DATA_WIDTH-1:0] conn_b   [0:N][0:N-1];
-    wire signed [ACC_WIDTH-1:0]  acc_link [0:N-1][0:N-1];
- 
+
     genvar r, c;
- 
-    // ------------------------------------------------------------------
-    // Wire external inputs straight onto the array's left/top boundary
-    // ------------------------------------------------------------------
     generate
-        for (r = 0; r < N; r = r + 1) begin : ROW_EDGE
-            assign conn_a[r][0] = a_ext[r];
-        end
-        for (c = 0; c < N; c = c + 1) begin : COL_EDGE
-            assign conn_b[0][c] = b_ext[c];
-        end
-    endgenerate
- 
-    // ------------------------------------------------------------------
-    // The N x N grid of PEs
-    // ------------------------------------------------------------------
-    generate
-        for (r = 0; r < N; r = r + 1) begin : ROWS
-            for (c = 0; c < N; c = c + 1) begin : COLS
+        for (r = 0; r < ROWS; r = r + 1) begin : GEN_ROWS
+            for (c = 0; c < COLS; c = c + 1) begin : GEN_COLS
                 pe #(
-                    .DATA_WIDTH (DATA_WIDTH),
-                    .ACC_WIDTH  (ACC_WIDTH)
-                ) pe_inst (
-                    .clk       (clk),
-                    .rst_n     (rst_n),
-                    .clear_acc (clear_acc),
-                    .a_in      (conn_a[r][c]),
-                    .b_in      (conn_b[r][c]),
-                    .a_out     (conn_a[r][c+1]),
-                    .b_out     (conn_b[r+1][c]),
-                    .acc_out   (acc_link[r][c])
+                    .DW(DW),
+                    .K(K)
+                ) pe_UUT (
+                    .clk(clk),
+                    .rst_n(rst_n),
+                    .clear(clear),
+                    .a_in((c == 0) ? SKEW_A[r] : pe_a[r][c-1]),
+                    .b_in((r == 0) ? SKEW_B[c] : pe_b[r-1][c]),
+                    .valid_in(
+                        (c == 0 && r == 0) ? (valA[r] & valB[c]) :
+                        (c == 0)           ? (valA[r] & valOut[r-1][c]) :
+                        (r == 0)           ? (valOut[r][c-1] & valB[c]) :
+                                             (valOut[r][c-1] & valOut[r-1][c])
+                    ),
+                    .a_out(pe_a[r][c]),
+                    .b_out(pe_b[r][c]),
+                    .valid_out(valOut[r][c]),
+                    .acc(C[r][c])
                 );
             end
         end
     endgenerate
- 
-    // Pack all N*N accumulators onto the flat acc_out bus, row-major.
+
+    genvar pr, pc;
     generate
-        for (r = 0; r < N; r = r + 1) begin : PACK_ACC_ROW
-            for (c = 0; c < N; c = c + 1) begin : PACK_ACC_COL
-                assign acc_out[(r*N+c)*ACC_WIDTH +: ACC_WIDTH] = acc_link[r][c];
+        for (pr = 0; pr < ROWS; pr = pr + 1) begin : PACK_C_ROWS
+            for (pc = 0; pc < COLS; pc = pc + 1) begin : PACK_C_COLS
+                assign C_flat[(pr*COLS+pc)*ACC_DW +: ACC_DW] = C[pr][pc];
             end
         end
     endgenerate
- 
+
+    reg [TOTCYC_W-1:0] cycles;
+    reg                running;
+    reg                done_r;
+
+    assign done = done_r;
+
+    always @(posedge clk or negedge rst_n) begin
+        if (~rst_n) begin
+            running <= 1'b0;
+            done_r  <= 1'b0;
+            cycles  <= {TOTCYC_W{1'b0}};
+        end else begin
+            done_r <= 1'b0;
+            if (start) begin
+                running <= 1'b1;
+                cycles  <= {TOTCYC_W{1'b0}};
+            end
+            if (running) begin
+                cycles <= cycles + 1'b1;
+                if (cycles == TOTAL_CYCLES - 1) begin
+                    running <= 1'b0;
+                    done_r  <= 1'b1;
+                end
+            end
+        end
+    end
+
 endmodule
