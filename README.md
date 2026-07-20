@@ -45,13 +45,11 @@ Synchronous, DSP-friendly MAC implementation suitable for resource-constrained F
 
 # FPGA Evaluation
 
-Target FPGA
-
-- Development Board: ___
+Target FPGA: EBAZ4205 Development Board
 
 Clock Constraint
 
-- ___ ns (___ MHz)
+- 20 ns (50 MHz)
 
 ---
 ---
