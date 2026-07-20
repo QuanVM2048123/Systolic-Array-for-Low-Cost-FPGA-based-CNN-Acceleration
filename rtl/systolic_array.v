@@ -9,8 +9,9 @@ module systolic_array #(
     parameter ROWS = 4,
     parameter COLS = 4,
     parameter K    = 4,
-    parameter DW   = 8
-) (
+    parameter DW   = 8,
+    parameter ACC_DW = 2*DW + $clog2(K)
+)(
     input  wire clk,
     input  wire rst_n,
     input  wire start,
@@ -24,7 +25,6 @@ module systolic_array #(
 );
 
     localparam TOTAL_CYCLES = ROWS + COLS + K - 2;
-    localparam ACC_DW       = 2*DW + $clog2(K);
     localparam TOTCYC_W     = $clog2(TOTAL_CYCLES+1);
 
     wire signed [ROWS*DW-1:0] SKEW_A_flat;
@@ -115,25 +115,43 @@ module systolic_array #(
 
     assign done = done_r;
 
-    always @(posedge clk or negedge rst_n) begin
-        if (~rst_n) begin
-            running <= 1'b0;
-            done_r  <= 1'b0;
-            cycles  <= {TOTCYC_W{1'b0}};
-        end else begin
-            done_r <= 1'b0;
-            if (start) begin
-                running <= 1'b1;
-                cycles  <= {TOTCYC_W{1'b0}};
-            end
-            if (running) begin
-                cycles <= cycles + 1'b1;
-                if (cycles == TOTAL_CYCLES - 1) begin
-                    running <= 1'b0;
-                    done_r  <= 1'b1;
-                end
-            end
-        end
+    always @(posedge clk or negedge rst_n)
+begin
+    if(!rst_n) begin
+        running <= 0;
+        cycles  <= 0;
+        done_r  <= 0;
     end
 
+    else if(clear) begin
+        running <= 0;
+        cycles  <= 0;
+        done_r  <= 0;
+    end
+
+    else begin
+
+        if(done_r)
+            done_r <= 0;
+
+        if(start && !running) begin
+            running <= 1;
+            cycles <= 0;
+        end
+
+        else if(running) begin
+
+            if(cycles == TOTAL_CYCLES-1) begin
+                running <= 0;
+                done_r <= 1;
+            end
+
+            else begin
+                cycles <= cycles + 1'b1;
+            end
+
+        end
+
+    end
+end
 endmodule
