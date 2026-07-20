@@ -6,9 +6,9 @@
 //   C_flat[(r*COLS+c)*ACC_DW +: ACC_DW] == original C[r][c]
 
 module systolic_array #(
-    parameter ROWS = 8,
-    parameter COLS = 8,
-    parameter K    = 8,
+    parameter ROWS = 4,
+    parameter COLS = 4,
+    parameter K    = 4,
     parameter DW   = 8
 ) (
     input  wire clk,
