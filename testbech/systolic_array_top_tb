@@ -1,0 +1,86 @@
+`timescale 1ns/1ps
+module tb_systolic_array_top;
+    parameter ROWS = 4;
+    parameter COLS = 4;
+    parameter K    = 4;
+    parameter DW   = 8;
+    parameter ACC_DW = 2*DW + 2;
+    reg clk, rst_n, start, in_valid, out_ready;
+    reg [DW-1:0] in_data;
+    wire in_ready, out_valid, done;
+    wire [ACC_DW-1:0] out_data;
+    reg signed [DW-1:0] A_test [0:ROWS-1][0:K-1];
+    reg signed [DW-1:0] B_test [0:K-1][0:COLS-1];
+    reg signed [ACC_DW-1:0] C_exp [0:ROWS-1][0:COLS-1];
+    reg signed [ACC_DW-1:0] C_got [0:ROWS-1][0:COLS-1];
+    integer i, j, k_idx, sum, error_count;
+    systolic_array_top #(.ROWS(ROWS), .COLS(COLS), .K(K), .DW(DW)) dut (
+        .clk(clk), .rst_n(rst_n), .start(start),
+        .in_valid(in_valid), .in_data(in_data), .out_ready(out_ready),
+        .in_ready(in_ready), .out_valid(out_valid), .out_data(out_data), .done(done)
+    );
+    initial begin clk = 0; forever #5 clk = ~clk; end
+    initial begin
+        // init signals
+        rst_n=0; start=0; in_valid=0; in_data=0; out_ready=0; error_count=0;
+        // create test matrices A, B
+        for (i=0; i<ROWS; i=i+1)
+            for (j=0; j<K; j=j+1) A_test[i][j] = i+j+1;
+        for (i=0; i<K; i=i+1)
+            for (j=0; j<COLS; j=j+1) B_test[i][j] = i-j;
+        // compute expected C = A x B
+        for (i=0; i<ROWS; i=i+1) begin
+            for (j=0; j<COLS; j=j+1) begin
+                sum = 0;
+                for (k_idx=0; k_idx<K; k_idx=k_idx+1)
+                    sum = sum + A_test[i][k_idx]*B_test[k_idx][j];
+                C_exp[i][j] = sum;
+            end
+        end
+        // reset
+        #20; rst_n=1; #10;
+        // pulse start
+        @(posedge clk); start=1;
+        @(posedge clk); start=0;
+        // load matrix A
+        in_valid=1;
+        for (i=0; i<ROWS; i=i+1)
+            for (j=0; j<K; j=j+1) begin
+                in_data = A_test[i][j];
+                @(posedge clk);
+                while (!in_ready) @(posedge clk);
+            end
+        // load matrix B
+        for (i=0; i<K; i=i+1)
+            for (j=0; j<COLS; j=j+1) begin
+                in_data = B_test[i][j];
+                @(posedge clk);
+                while (!in_ready) @(posedge clk);
+            end
+        in_valid=0; in_data=0;
+        // wait for done
+        wait (done==1);
+        $display("[%0t] done=1, reading result...", $time);
+        // read output C
+        out_ready=1;
+        for (i=0; i<ROWS; i=i+1)
+            for (j=0; j<COLS; j=j+1) begin
+                while (!out_valid) @(posedge clk);
+                C_got[i][j] = out_data;
+                @(posedge clk);
+            end
+        out_ready=0;
+        // compare result
+        for (i=0; i<ROWS; i=i+1)
+            for (j=0; j<COLS; j=j+1) begin
+                if (C_got[i][j] !== C_exp[i][j]) begin
+                    error_count = error_count+1;
+                    $display("FAIL C[%0d][%0d]: exp=%0d got=%0d", i, j, C_exp[i][j], C_got[i][j]);
+                end else
+                    $display("PASS C[%0d][%0d] = %0d", i, j, C_got[i][j]);
+            end
+        if (error_count==0) $display(">>> ALL TESTS PASSED <<<");
+        else $display(">>> %0d ERRORS FOUND <<<", error_count);
+        #20; $finish;
+    end
+endmodule
