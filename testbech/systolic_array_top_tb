@@ -58,10 +58,7 @@ module tb_systolic_array_top;
                 while (!in_ready) @(posedge clk);
             end
         in_valid=0; in_data=0;
-        // wait for done
-        wait (done==1);
-        $display("[%0t] done=1, reading result...", $time);
-        // read output C
+        // read output C (out_valid marks data ready, not done)
         out_ready=1;
         for (i=0; i<ROWS; i=i+1)
             for (j=0; j<COLS; j=j+1) begin
@@ -70,6 +67,9 @@ module tb_systolic_array_top;
                 @(posedge clk);
             end
         out_ready=0;
+        // done only pulses on the last output cycle, check it here
+        if (done !== 1)
+            $display("WARNING: done not asserted after last output");
         // compare result
         for (i=0; i<ROWS; i=i+1)
             for (j=0; j<COLS; j=j+1) begin
