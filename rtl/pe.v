@@ -2,7 +2,7 @@
 
 module pe #(
     parameter DW = 8,
-    parameter K  = 8
+    parameter K  = 4
 ) (
     input  wire                     clk,
     input  wire                     rst_n,
@@ -33,7 +33,7 @@ module pe #(
                 a_out <= a_in;
                 b_out <= b_in;
                 acc   <= product + acc;
-            end if (clear) begin
+            end else if (clear) begin
                 acc <= {ACC_DW{1'b0}};
             end
         end
