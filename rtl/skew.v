@@ -1,18 +1,5 @@
 `timescale 1ns/1ps
 
-/***************************************
- * Start : wait for one clk, copy
- * register in this clk. Next clk: Start
- * skew
- ***************************************/
-
-// NOTE ON FLATTENING (Verilog has no unpacked-array ports):
-//   A_MAT_flat[(r*K+k)*DW +: DW]    == original A_MAT[r][k]
-//   B_MAT_flat[(k*COLS+c)*DW +: DW] == original B_MAT[k][c]
-//   SKEWED_A_flat[r*DW +: DW]       == original SKEWED_A[r]
-//   SKEWED_B_flat[c*DW +: DW]       == original SKEWED_B[c]
-//   valid_a[r] / valid_b[c] map directly to bit r / bit c (packed vector)
-
 module skew #(
     parameter ROWS = 8,
     parameter COLS = 8,
@@ -54,12 +41,6 @@ reg             skewing;
 integer i, j, r, c;
 integer ri, ki, ci;
 
-/* Timing note: `skewing` is set to 1 at the edge where `start` pulses.
- * SKEW_LOGIC reads `skewing` in a separate always block, so during
- * the start cycle itself, SKEW_LOGIC sees the old value (0) and does
- * not emit. First emission happens one cycle after start, with cycles=0.
- * This is correct behavior and relies on non-blocking assignment semantics.
- */
 always @(posedge clk or negedge rst_n) begin : CTRL_LOGIC
     if (~rst_n) begin
         cycles  <= {CNT_W{1'b0}};
@@ -133,9 +114,6 @@ always @(posedge clk or negedge rst_n) begin : SKEW_LOGIC
     end
 end
 
-/* Mainly used for debugging or to fix vulnerabilities
- * that may occur later.
- */
 always @(posedge clk or negedge rst_n) begin : DONE_FLAG
     if (~rst_n) begin
         done <= 1'b0;
