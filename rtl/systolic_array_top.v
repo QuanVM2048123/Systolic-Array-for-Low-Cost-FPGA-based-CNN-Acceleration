@@ -1,5 +1,5 @@
 `timescale 1ns/1ps
-module systolic_array #(
+module systolic_array_top #(
     parameter ROWS = 4,
     parameter COLS = 4,
     parameter K    = 4,
