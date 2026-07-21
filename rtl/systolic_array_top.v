@@ -1,5 +1,24 @@
 `timescale 1ns/1ps
 
+//======================================================================
+// systolic_array_top
+//
+// Module nay dong vai tro la "vo boc" (wrapper) ben ngoai cho khoi
+// systolic_array. Nhiem vu cua no la:
+//   1. Nhan du lieu ma tran A va B tung phan tu mot qua cong in_data
+//      (giong kieu bat tay AXI-Stream don gian: in_valid / in_ready)
+//   2. Sau khi nhan du du lieu, cho khoi systolic_array tinh C = A*B
+//   3. Xuat ket qua ma tran C ra ngoai tung phan tu mot qua out_data
+//      (out_valid / out_ready)
+//
+// Cach hoat dong dung 1 may trang thai (FSM) gom 5 trang thai:
+//   IDLE    : cho lenh start
+//   LOAD_A  : nhan cac phan tu cua ma tran A
+//   LOAD_B  : nhan cac phan tu cua ma tran B
+//   COMPUTE : cho khoi systolic_array tinh xong
+//   OUTPUT  : xuat tung phan tu cua ma tran C ra ngoai
+//======================================================================
+
 module systolic_array_top #(
     parameter ROWS = 4,
     parameter COLS = 4,
@@ -10,115 +29,104 @@ module systolic_array_top #(
     input  wire rst_n,
     input  wire start,
 
+    // Nga vao nhan du lieu A, B (nhan tuan tu tung phan tu)
     input  wire in_valid,
     input  wire signed [DW-1:0] in_data,
-
-    input  wire out_ready,
-
     output wire in_ready,
+
+    // Nga ra xuat du lieu C (xuat tuan tu tung phan tu)
+    input  wire out_ready,
     output wire out_valid,
     output wire signed [2*DW+$clog2(K)-1:0] out_data,
+
     output wire done
 );
 
 localparam ACC_DW = 2*DW + $clog2(K);
 
+// So phan tu can nhan / xuat
+localparam A_LEN = ROWS*K;
+localparam B_LEN = K*COLS;
+localparam C_LEN = ROWS*COLS;
+
+// Do rong bo dem du de chua het so phan tu lon nhat trong 3 so tren
+localparam CNT_W = $clog2(C_LEN+1);
+
+// Ma cac trang thai cua FSM
 localparam IDLE    = 3'd0;
 localparam LOAD_A  = 3'd1;
 localparam LOAD_B  = 3'd2;
 localparam COMPUTE = 3'd3;
 localparam OUTPUT  = 3'd4;
 
+reg [2:0] state;
 
 //====================================================
-// Memory
+// Bo nho luu ma tran A, B (dang mang 2 chieu cho de doc)
 //====================================================
 
 reg signed [DW-1:0] A [0:ROWS-1][0:K-1];
 reg signed [DW-1:0] B [0:K-1][0:COLS-1];
 
+// Dang "trai phang" (flatten) de dua vao khoi systolic_array,
+// vi cong module chi nhan duoc 1 bus 1 chieu
 wire signed [ROWS*K*DW-1:0] A_flat;
 wire signed [K*COLS*DW-1:0] B_flat;
 
 wire signed [ROWS*COLS*ACC_DW-1:0] C_flat;
 
-
 //====================================================
-// Counter
-//====================================================
-
-reg [2:0] state;
-
-reg [5:0] load_cnt;
-reg [5:0] out_cnt;
-
-integer row;
-integer col;
-
-
-//====================================================
-// Systolic control
+// Bo dem dung chung cho ca 3 giai doan load A / load B / xuat C
 //====================================================
 
-reg sa_start;
-reg sa_clear;
+reg [CNT_W-1:0] cnt;
 
+//====================================================
+// Tin hieu dieu khien khoi systolic_array
+//====================================================
+
+reg  sa_start;
+reg  sa_clear;
 wire sa_done;
-    //====================================================
-// Pack A -> A_flat
+
+//====================================================
+// Goi trai phang A -> A_flat
 //====================================================
 
-genvar r,c;
+genvar ra, ca;
 
 generate
-
-    for(r=0;r<ROWS;r=r+1) begin : PACK_A_ROW
-
-        for(c=0;c<K;c=c+1) begin : PACK_A_COL
-
-            assign A_flat[(r*K+c)*DW +: DW] = A[r][c];
-
+    for (ra = 0; ra < ROWS; ra = ra + 1) begin : PACK_A_ROW
+        for (ca = 0; ca < K; ca = ca + 1) begin : PACK_A_COL
+            assign A_flat[(ra*K+ca)*DW +: DW] = A[ra][ca];
         end
-
     end
-
 endgenerate
 
+//====================================================
+// Goi trai phang B -> B_flat
+//====================================================
 
-//====================================================
-// Pack B -> B_flat
-//====================================================
+genvar rb, cb;
 
 generate
-
-    for(r=0;r<K;r=r+1) begin : PACK_B_ROW
-
-        for(c=0;c<COLS;c=c+1) begin : PACK_B_COL
-
-            assign B_flat[(r*COLS+c)*DW +: DW] = B[r][c];
-
+    for (rb = 0; rb < K; rb = rb + 1) begin : PACK_B_ROW
+        for (cb = 0; cb < COLS; cb = cb + 1) begin : PACK_B_COL
+            assign B_flat[(rb*COLS+cb)*DW +: DW] = B[rb][cb];
         end
-
     end
-
 endgenerate
 
-
 //====================================================
-// Instantiate Systolic Array
+// Instance khoi systolic_array
 //====================================================
 
 systolic_array #(
-
     .ROWS(ROWS),
     .COLS(COLS),
     .K(K),
     .DW(DW)
-
-)
-u_systolic_array
-(
-
+) u_systolic_array (
     .clk(clk),
     .rst_n(rst_n),
 
@@ -130,120 +138,139 @@ u_systolic_array
 
     .C_flat(C_flat),
     .done(sa_done)
-
 );
 
-
 //====================================================
-// AXI-Stream style handshake
+// Cac tin hieu bat tay (handshake) xuat ra ngoai module
 //====================================================
 
 assign in_ready  = (state == LOAD_A) || (state == LOAD_B);
-
 assign out_valid = (state == OUTPUT);
 
-assign done      = (state == IDLE) && (out_cnt == ROWS*COLS);
-
-assign out_data = C_flat[out_cnt*ACC_DW +: ACC_DW];
-    //====================================================
-// FSM
-//====================================================
+// Lay ra 1 phan tu C dang chi boi cnt
+assign out_data = C_flat[cnt*ACC_DW +: ACC_DW];
 
 reg done_r;
-
 assign done = done_r;
+
+//====================================================
+// FSM chinh
+//====================================================
 
 always @(posedge clk or negedge rst_n)
 begin
-    if(!rst_n) begin
+    if (!rst_n) begin
 
         state    <= IDLE;
+        cnt      <= 0;
 
-        load_cnt <= 0;
-        out_cnt  <= 0;
+        sa_start <= 1'b0;
+        sa_clear <= 1'b1;
 
-        sa_start <= 0;
-        sa_clear <= 0;
-
-        done_r   <= 0;
+        done_r   <= 1'b0;
 
     end
-
     else begin
 
-        sa_start <= 0;
-        sa_clear <= 0;
-        done_r   <= 0;
+        // Mac dinh moi chu ky la 0, chi bat len 1 xung khi can
+        sa_start <= 1'b0;
+        sa_clear <= 1'b0;
+        done_r   <= 1'b0;
 
-        case(state)
+        case (state)
 
         //--------------------------------------------------
-        // IDLE
+        // IDLE: cho lenh bat dau
         //--------------------------------------------------
-
         IDLE:
         begin
-            load_cnt <= 0;
-            out_cnt  <= 0;
+            cnt <= 0;
 
-            if(start)
-                state <= LOAD_A;
+            if (start) begin
+                sa_clear <= 1'b1;   // xoa acc cu trong cac PE truoc khi lam vong moi
+                state    <= LOAD_A;
+            end
         end
 
         //--------------------------------------------------
-        // LOAD A
+        // LOAD_A: nhan tung phan tu cua ma tran A
         //--------------------------------------------------
-
         LOAD_A:
         begin
-            if(in_valid && in_ready) begin
+            if (in_valid && in_ready) begin
 
-                A[load_cnt/K][load_cnt%K] <= in_data;
+                A[cnt/K][cnt%K] <= in_data;
 
-                if(load_cnt == ROWS*K-1)
-                    load_cnt <= 0;
-                else
-                    load_cnt <= load_cnt + 1;
-
-                if(load_cnt == ROWS*K-1)
+                if (cnt == A_LEN-1) begin
+                    cnt   <= 0;
                     state <= LOAD_B;
+                end
+                else begin
+                    cnt <= cnt + 1'b1;
+                end
 
             end
         end
 
         //--------------------------------------------------
-        // LOAD B
+        // LOAD_B: nhan tung phan tu cua ma tran B
         //--------------------------------------------------
-
         LOAD_B:
         begin
-            if(in_valid && in_ready) begin
+            if (in_valid && in_ready) begin
 
-                B[load_cnt/COLS][load_cnt%COLS] <= in_data;
+                B[cnt/COLS][cnt%COLS] <= in_data;
 
-                if(load_cnt == K*COLS-1) begin
-
-                    load_cnt <= 0;
-
-                    sa_start <= 1;
-
-                    state <= COMPUTE;
-
+                if (cnt == B_LEN-1) begin
+                    cnt      <= 0;
+                    sa_start <= 1'b1;   // bao cho systolic_array bat dau tinh
+                    state    <= COMPUTE;
                 end
-                else
-                    load_cnt <= load_cnt + 1;
+                else begin
+                    cnt <= cnt + 1'b1;
+                end
 
             end
         end
 
         //--------------------------------------------------
-        // COMPUTE
+        // COMPUTE: cho khoi systolic_array tinh xong
         //--------------------------------------------------
-
         COMPUTE:
         begin
-
-            if(sa_done)
+            if (sa_done) begin
+                cnt   <= 0;
                 state <= OUTPUT;
-
+            end
         end
+
+        //--------------------------------------------------
+        // OUTPUT: xuat tung phan tu cua ma tran C ra ngoai
+        //--------------------------------------------------
+        OUTPUT:
+        begin
+            if (out_valid && out_ready) begin
+
+                if (cnt == C_LEN-1) begin
+                    cnt    <= 0;
+                    done_r <= 1'b1;   // bao hoan tat 1 xung
+                    state  <= IDLE;
+                end
+                else begin
+                    cnt <= cnt + 1'b1;
+                end
+
+            end
+        end
+
+        default:
+        begin
+            state <= IDLE;
+        end
+
+        endcase
+
+    end
+end
+
+endmodule
