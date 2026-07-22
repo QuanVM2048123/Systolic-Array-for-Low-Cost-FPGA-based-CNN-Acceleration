@@ -1,55 +1,111 @@
 # Systolic Array for Low-Cost FPGA-based CNN Acceleration
 
-A modular Systolic Array-based Convolutional Neural Network (CNN) accelerator implemented in Verilog/SystemVerilog HDL, targeting low-cost FPGA platforms.
+A lightweight, parameterizable **output-stationary systolic array** implemented in Verilog, designed to accelerate the matrix-multiplication core of CNN inference (e.g. im2col-based convolution / GEMM) on low-cost FPGA boards.
 
-The project provides multiple systolic array configurations (e.g. Output-Stationary, Weight-Stationary) for convolution and matrix-multiplication acceleration, enabling architectural comparison in terms of FPGA resource utilization, throughput, and power efficiency on resource-constrained devices.
+## Overview
 
----
+Convolutional Neural Network (CNN) inference is dominated by matrix-multiplication workloads. A **systolic array** maps this computation onto a regular grid of simple Processing Elements (PEs) that pass data locally between neighbors, which keeps routing short and makes the design scale well on resource-constrained, low-cost FPGAs.
 
-## Features
+This project implements a **ROWS × COLS output-stationary systolic array** that computes:
 
-- Systolic Array-based Matrix Multiplication / Convolution
-- Configurable Array Size (e.g. NxN Processing Elements)
-- Support for Quantized Data Types (INT8 / INT16, optionally FP16)
-- Weight-Stationary and/or Output-Stationary Dataflow
-- On-chip Line Buffer / Weight Buffer for Data Reuse
-- Modular RTL Architecture (PE array decoupled from control/buffering)
-- FPGA-Oriented Resource & Timing Evaluation
-- Low-Cost FPGA Target (small LUT/BRAM/DSP footprint)
+```
+C (ROWS x COLS) = A (ROWS x K) x B (K x COLS)
+```
 
----
+Each PE accumulates one output element of `C` locally and never moves it out of the array until the computation is complete, minimizing accumulator traffic and making the design well suited to fixed-point CNN accelerators.
 
-## Project Overview
+## Architecture
 
-Systolic Array for Low-Cost FPGA-based CNN Acceleration
-A Verilog hardware design implementing an N×N systolic array using an output-stationary dataflow, built to accelerate matrix multiplication — the core computation behind convolution and fully-connected layers in CNNs. The design targets low-cost FPGA platforms, aiming for efficient use of limited DSP resources.
-Core architecture:
+### Output-Stationary Dataflow
 
-PE (Processing Element) – the basic compute unit, performing multiply-accumulate (MAC) operations and forwarding data to neighboring PEs.
-Systolic Array – an N×N grid of PEs, where activations flow row-wise (left→right) and weights flow column-wise (top→bottom), maximizing data reuse between adjacent PEs.
-Skew Buffer – delays input rows/columns by the appropriate number of cycles so data arrives at each PE in sync, forming the diagonal wavefront needed for correct systolic computation.
-Top module – integrates the full pipeline: takes in raw input data, applies skewing automatically, feeds the systolic array, and outputs the accumulated results.
+- Matrix **A** streams into the array from the **left**, one skewed diagonal per cycle.
+- Matrix **B** streams into the array from the **top**, one skewed diagonal per cycle.
+- Each PE computes `acc += a_in * b_in`, then forwards `a_in` to the PE on its right and `b_in` to the PE below it.
+- The partial sum `acc` (the output element `C[r][c]`) **stays stationary** inside PE `(r, c)` for the entire computation.
 
-Highlights:
+```
+            B[0][0]  B[0][1]  B[0][2]  B[0][3]
+               |        |        |        |
+A[0][*] --> PE(0,0)--PE(0,1)--PE(0,2)--PE(0,3)
+               |        |        |        |
+A[1][*] --> PE(1,0)--PE(1,1)--PE(1,2)--PE(1,3)
+               |        |        |        |
+A[2][*] --> PE(2,0)--PE(2,1)--PE(2,2)--PE(2,3)
+               |        |        |        |
+A[3][*] --> PE(3,0)--PE(3,1)--PE(3,2)--PE(3,3)
+```
 
-Fully parameterized (array size N, data width, accumulator width) for easy scaling
-Modular design with clean separation between PE, array, and skew logic
-Synchronous, DSP-friendly MAC implementation suitable for resource-constrained FPGAs
----
+### Skewing
 
-# Top-Level Architecture
+Because every PE needs its two operands to arrive on the same cycle *after* traveling different distances through the grid, the inputs must be **diagonally skewed** before entering the array. The `skew` module reshapes the flattened `A` and `B` matrices into per-row/per-column staggered streams (with `valid_a` / `valid_b` strobes), so row `r` of `A` and column `c` of `B` are released `r` and `c` cycles later, respectively.
 
-<p align="center">
-<img src="doc/images/Architecture_Block_Diagram.png" width="850">
-</p>
+## Module Description
 
-# FPGA Evaluation
+| Module                 | File                    | Description                                                                                     |
+| ----------------------- | ------------------------ | ------------------------------------------------------------------------------------------------- |
+| `pe`                   | `rtl/pe.v`               | Single Processing Element: signed multiply-accumulate, registers `a`/`b` pass-through and `valid` pipeline, synchronous `clear`. |
+| `skew`                 | `rtl/skew.v`             | Diagonally skews matrices `A` and `B` into per-row / per-column streams with `valid` strobes and a `done` flag. |
+| `systolic_array`       | `rtl/systolic_array.v`   | Instantiates `skew` + a `ROWS x COLS` generate-block grid of `pe`, wires neighbor connections, packs the result into `C_flat`, and drives the compute-cycle counter / `done`. |
+| `systolic_array_top`   | `rtl/systolic_array_top.v` | Top-level wrapper with a simple AXI-Stream-like handshake (`in_valid/in_ready`, `out_valid/out_ready`). A 5-state FSM streams matrix `A` and `B` in element-by-element, triggers the `systolic_array`, then streams matrix `C` out element-by-element. |
 
-Target FPGA: EBAZ4205 Development Board
+## Parameters
 
-Clock Constraint
+| Parameter | Default | Description                                              |
+| --------- | ------- | ---------------------------------------------------------- |
+| `ROWS`    | 4       | Number of rows in `A` / rows of PEs                       |
+| `COLS`    | 4       | Number of columns in `B` / columns of PEs                 |
+| `K`       | 4       | Shared (inner) dimension of `A` and `B`                   |
+| `DW`      | 8       | Bit width of each element of `A` and `B` (signed)          |
+| `ACC_DW`  | `2*DW + clog2(K)` | Accumulator / output bit width (signed), e.g. 18 bits for the defaults above |
 
-- 20 ns (50 MHz)
+All parameters are set at the top level (`systolic_array_top`) and propagate down to `systolic_array`, `skew`, and every `pe` instance via Verilog `parameter` overrides.
 
----
----
+## Interface
+
+`systolic_array_top` exposes a simple streaming (valid/ready) interface:
+
+| Signal      | Direction | Width                  | Description                                            |
+| ----------- | --------- | ----------------------- | -------------------------------------------------------- |
+| `clk`       | in        | 1                        | Clock                                                    |
+| `rst_n`     | in        | 1                        | Active-low asynchronous reset                            |
+| `start`     | in        | 1                        | Pulse to begin a new `A x B` computation                |
+| `in_valid`  | in        | 1                        | Input element valid                                      |
+| `in_data`   | in        | `DW`                     | One signed element of `A` (then `B`), sent sequentially |
+| `in_ready`  | out       | 1                        | Asserted while the module is accepting `A`/`B` elements |
+| `out_ready` | in        | 1                        | Downstream ready to accept a `C` element                |
+| `out_valid` | out       | 1                        | One `C` element is available on `out_data`               |
+| `out_data`  | out       | `ACC_DW`                 | One signed element of result matrix `C`                  |
+| `done`      | out       | 1                        | One-cycle pulse when the whole `A x B x C` sequence completes |
+
+Data ordering: `A` is streamed row-major (`ROWS x K` elements), `B` is streamed row-major (`K x COLS` elements), and `C` is read back row-major (`ROWS x COLS` elements).
+
+## FSM (Top-Level Control)
+
+`systolic_array_top` is driven by a 5-state FSM:
+
+```
+IDLE --start--> LOAD_A --(ROWS*K elems)--> LOAD_B --(K*COLS elems)--> COMPUTE --sa_done--> OUTPUT --(ROWS*COLS elems)--> IDLE
+```
+
+| State     | Behavior                                                                 |
+| --------- | --------------------------------------------------------------------------- |
+| `IDLE`    | Waits for `start`; clears the internal PE accumulators for the next run.    |
+| `LOAD_A`  | Accepts `ROWS*K` elements on `in_data` into matrix `A`.                    |
+| `LOAD_B`  | Accepts `K*COLS` elements on `in_data` into matrix `B`, then triggers `systolic_array`. |
+| `COMPUTE` | Waits for the `systolic_array` core to finish (`sa_done`).                 |
+| `OUTPUT`  | Streams `ROWS*COLS` elements of `C` out on `out_data`.                     |
+
+## Target FPGA
+
+- **Target Board:** EBAZ4205 Development Board
+- **Clock Constraint:** 20 ns (50 MHz)
+
+
+## References
+
+- H. T. Kung, "Why Systolic Architectures?", IEEE Computer, 1982.
+- Google TPU / systolic-array-based accelerator literature.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
