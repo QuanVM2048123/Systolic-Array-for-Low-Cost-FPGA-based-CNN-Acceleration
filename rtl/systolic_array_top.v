@@ -30,17 +30,14 @@ module systolic_array_top #(
     input  wire clk,
     input  wire rst_n,
     input  wire start,
-
     // Nga vao nhan du lieu A, B (nhan tuan tu tung phan tu)
     input  wire in_valid,
     input  wire signed [DW-1:0] in_data,
     output wire in_ready,
-
     // Nga ra xuat du lieu C (xuat tuan tu tung phan tu)
     input  wire out_ready,
     output wire out_valid,
     output wire signed [2*DW+$clog2(K)-1:0] out_data,
-
     output wire done
 );
 
@@ -50,10 +47,13 @@ localparam ACC_DW = 2*DW + $clog2(K);
 localparam A_LEN = ROWS*K;
 localparam B_LEN = K*COLS;
 localparam C_LEN = ROWS*COLS;
-
-// Do rong bo dem du de chua het so phan tu lon nhat trong 3 so tren
-localparam CNT_W = $clog2(C_LEN+1);
-
+// Tim so phan tu lon nhat
+localparam MAX_LEN =
+    (A_LEN > B_LEN) ?
+        ((A_LEN > C_LEN) ? A_LEN : C_LEN) :
+        ((B_LEN > C_LEN) ? B_LEN : C_LEN);
+// Do rong bo dem
+localparam CNT_W = $clog2(MAX_LEN + 1);
 // Ma cac trang thai cua FSM
 localparam IDLE    = 3'd0;
 localparam LOAD_A  = 3'd1;
