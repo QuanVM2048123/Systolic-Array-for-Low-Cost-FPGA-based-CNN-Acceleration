@@ -1,24 +1,26 @@
 `timescale 1ns/1ps
-
 //======================================================================
-// systolic_array_top
+// Systolic Array-Based Matrix Multiplication Accelerator
 //
-// Module nay dong vai tro la "vo boc" (wrapper) ben ngoai cho khoi
-// systolic_array. Nhiem vu cua no la:
-//   1. Nhan du lieu ma tran A va B tung phan tu mot qua cong in_data
-//      (giong kieu bat tay AXI-Stream don gian: in_valid / in_ready)
-//   2. Sau khi nhan du du lieu, cho khoi systolic_array tinh C = A*B
-//   3. Xuat ket qua ma tran C ra ngoai tung phan tu mot qua out_data
-//      (out_valid / out_ready)
+// Top-level controller for the systolic array accelerator.
 //
-// Cach hoat dong dung 1 may trang thai (FSM) gom 5 trang thai:
-//   IDLE    : cho lenh start
-//   LOAD_A  : nhan cac phan tu cua ma tran A
-//   LOAD_B  : nhan cac phan tu cua ma tran B
-//   COMPUTE : cho khoi systolic_array tinh xong
-//   OUTPUT  : xuat tung phan tu cua ma tran C ra ngoai
+// Functions:
+//   1. Receive matrix A and matrix B through a streaming interface.
+//   2. Store input matrices into local buffers.
+//   3. Launch the systolic array computation engine.
+//   4. Collect and stream out matrix multiplication results.
+//
+// Architecture:
+//   - Input Buffer
+//   - Systolic Array Core
+//   - Output Controller
+//
+// The computation core is implemented using:
+//   - Skewing Unit
+//   - 2D Processing Element (PE) Array
+//   - Pipelined Multiply-Accumulate Operations
+//
 //======================================================================
-
 module systolic_array_top #(
     parameter ROWS = 4,
     parameter COLS = 4,
