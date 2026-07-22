@@ -97,7 +97,7 @@ IDLE --start--> LOAD_A --(ROWS*K elems)--> LOAD_B --(K*COLS elems)--> COMPUTE --
 
 ## Target FPGA
 
-- **Target FPGA:** EBAZ4205 Development Board
+- **Target Board:** EBAZ4205 Development Board
 - **Clock Constraint:** 20 ns (50 MHz)
 
 ## Simulation
