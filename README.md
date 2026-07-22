@@ -1,5 +1,9 @@
 # Systolic Array for Low-Cost FPGA-based CNN Acceleration
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Language](https://img.shields.io/badge/HDL-Verilog-blue.svg)
+![Target](https://img.shields.io/badge/Target-Low--Cost%20FPGA-orange.svg)
+
 A lightweight, parameterizable **output-stationary systolic array** implemented in Verilog, designed to accelerate the matrix-multiplication core of CNN inference (e.g. im2col-based convolution / GEMM) on low-cost FPGA boards.
 
 ## Table of Contents
@@ -10,10 +14,8 @@ A lightweight, parameterizable **output-stationary systolic array** implemented 
 - [Parameters](#parameters)
 - [Interface](#interface)
 - [FSM (Top-Level Control)](#fsm-top-level-control)
-- [Timing](#timing)
-- [Repository Structure](#repository-structure)
+- [Target FPGA](#target-fpga)
 - [Simulation](#simulation)
-- [Results](#results)
 - [References](#references)
 - [License](#license)
 
@@ -122,32 +124,12 @@ IDLE --start--> LOAD_A --(ROWS*K elems)--> LOAD_B --(K*COLS elems)--> COMPUTE --
 | `COMPUTE` | Waits for the `systolic_array` core to finish (`sa_done`).                 |
 | `OUTPUT`  | Streams `ROWS*COLS` elements of `C` out on `out_data`.                     |
 
-## Timing
+## Target FPGA
 
-[#timing](#timing)
+[#target-fpga](#target-fpga)
 
-The core compute latency of the systolic array itself is:
-
-```
-TOTAL_CYCLES = ROWS + COLS + K - 2
-```
-
-Total end-to-end latency additionally includes the `ROWS*K` cycles to load `A`, the `K*COLS` cycles to load `B`, and the `ROWS*COLS` cycles to stream out `C` (assuming the handshake is not stalled by `in_valid`/`out_ready`).
-
-## Repository Structure
-
-[#repository-structure](#repository-structure)
-
-```
-.
-├── rtl/
-│   ├── pe.v
-│   ├── skew.v
-│   ├── systolic_array.v
-│   └── systolic_array_top.v
-├── LICENSE
-└── README.md
-```
+- **Target FPGA:** EBAZ4205 Development Board
+- **Clock Constraint:** 20 ns (50 MHz)
 
 ## Simulation
 
@@ -165,12 +147,6 @@ Example with Icarus Verilog:
 iverilog -o sim.out rtl/pe.v rtl/skew.v rtl/systolic_array.v rtl/systolic_array_top.v tb_systolic_array_top.v
 vvp sim.out
 ```
-
-## Results
-
-[#results](#results)
-
-*To be added: FPGA resource utilization (LUTs / FFs / DSPs / BRAM), maximum clock frequency, and CNN inference speedup/accuracy figures once synthesis and board-level testing are complete.*
 
 ## References
 
