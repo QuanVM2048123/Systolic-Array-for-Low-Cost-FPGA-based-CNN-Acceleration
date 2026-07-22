@@ -2,22 +2,7 @@
 
 A lightweight, parameterizable **output-stationary systolic array** implemented in Verilog, designed to accelerate the matrix-multiplication core of CNN inference (e.g. im2col-based convolution / GEMM) on low-cost FPGA boards.
 
-## Table of Contents
-
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Module Description](#module-description)
-- [Parameters](#parameters)
-- [Interface](#interface)
-- [FSM (Top-Level Control)](#fsm-top-level-control)
-- [Target FPGA](#target-fpga)
-- [Simulation](#simulation)
-- [References](#references)
-- [License](#license)
-
 ## Overview
-
-[#overview](#overview)
 
 Convolutional Neural Network (CNN) inference is dominated by matrix-multiplication workloads. A **systolic array** maps this computation onto a regular grid of simple Processing Elements (PEs) that pass data locally between neighbors, which keeps routing short and makes the design scale well on resource-constrained, low-cost FPGAs.
 
@@ -30,8 +15,6 @@ C (ROWS x COLS) = A (ROWS x K) x B (K x COLS)
 Each PE accumulates one output element of `C` locally and never moves it out of the array until the computation is complete, minimizing accumulator traffic and making the design well suited to fixed-point CNN accelerators.
 
 ## Architecture
-
-[#architecture](#architecture)
 
 ### Output-Stationary Dataflow
 
@@ -58,8 +41,6 @@ Because every PE needs its two operands to arrive on the same cycle *after* trav
 
 ## Module Description
 
-[#module-description](#module-description)
-
 | Module                 | File                    | Description                                                                                     |
 | ----------------------- | ------------------------ | ------------------------------------------------------------------------------------------------- |
 | `pe`                   | `rtl/pe.v`               | Single Processing Element: signed multiply-accumulate, registers `a`/`b` pass-through and `valid` pipeline, synchronous `clear`. |
@@ -68,8 +49,6 @@ Because every PE needs its two operands to arrive on the same cycle *after* trav
 | `systolic_array_top`   | `rtl/systolic_array_top.v` | Top-level wrapper with a simple AXI-Stream-like handshake (`in_valid/in_ready`, `out_valid/out_ready`). A 5-state FSM streams matrix `A` and `B` in element-by-element, triggers the `systolic_array`, then streams matrix `C` out element-by-element. |
 
 ## Parameters
-
-[#parameters](#parameters)
 
 | Parameter | Default | Description                                              |
 | --------- | ------- | ---------------------------------------------------------- |
@@ -82,8 +61,6 @@ Because every PE needs its two operands to arrive on the same cycle *after* trav
 All parameters are set at the top level (`systolic_array_top`) and propagate down to `systolic_array`, `skew`, and every `pe` instance via Verilog `parameter` overrides.
 
 ## Interface
-
-[#interface](#interface)
 
 `systolic_array_top` exposes a simple streaming (valid/ready) interface:
 
@@ -104,8 +81,6 @@ Data ordering: `A` is streamed row-major (`ROWS x K` elements), `B` is streamed 
 
 ## FSM (Top-Level Control)
 
-[#fsm-top-level-control](#fsm-top-level-control)
-
 `systolic_array_top` is driven by a 5-state FSM:
 
 ```
@@ -122,14 +97,10 @@ IDLE --start--> LOAD_A --(ROWS*K elems)--> LOAD_B --(K*COLS elems)--> COMPUTE --
 
 ## Target FPGA
 
-[#target-fpga](#target-fpga)
-
 - **Target FPGA:** EBAZ4205 Development Board
 - **Clock Constraint:** 20 ns (50 MHz)
 
 ## Simulation
-
-[#simulation](#simulation)
 
 > A testbench for `systolic_array_top` will be added. General flow once available:
 
@@ -146,13 +117,9 @@ vvp sim.out
 
 ## References
 
-[#references](#references)
-
 - H. T. Kung, "Why Systolic Architectures?", IEEE Computer, 1982.
 - Google TPU / systolic-array-based accelerator literature.
 
 ## License
-
-[#license](#license)
 
 This project is licensed under the [MIT License](LICENSE).
