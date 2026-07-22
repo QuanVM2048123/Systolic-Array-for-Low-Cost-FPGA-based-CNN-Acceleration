@@ -1,9 +1,5 @@
 # Systolic Array for Low-Cost FPGA-based CNN Acceleration
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![Language](https://img.shields.io/badge/HDL-Verilog-blue.svg)
-![Target](https://img.shields.io/badge/Target-Low--Cost%20FPGA-orange.svg)
-
 A lightweight, parameterizable **output-stationary systolic array** implemented in Verilog, designed to accelerate the matrix-multiplication core of CNN inference (e.g. im2col-based convolution / GEMM) on low-cost FPGA boards.
 
 ## Table of Contents
