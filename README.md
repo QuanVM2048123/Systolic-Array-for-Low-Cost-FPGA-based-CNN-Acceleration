@@ -100,20 +100,6 @@ IDLE --start--> LOAD_A --(ROWS*K elems)--> LOAD_B --(K*COLS elems)--> COMPUTE --
 - **Target Board:** EBAZ4205 Development Board
 - **Clock Constraint:** 20 ns (50 MHz)
 
-## Simulation
-
-> A testbench for `systolic_array_top` will be added. General flow once available:
-
-1. Compile the RTL and testbench with a Verilog simulator (e.g. Icarus Verilog, ModelSim/QuestaSim, or Vivado xsim).
-2. Run the simulation and inspect the resulting waveform.
-3. Check the `in_valid/in_ready` and `out_valid/out_ready` handshakes and the `done` pulse to verify functional correctness against a reference (e.g. NumPy) matrix multiplication.
-
-Example with Icarus Verilog:
-
-```bash
-iverilog -o sim.out rtl/pe.v rtl/skew.v rtl/systolic_array.v rtl/systolic_array_top.v tb_systolic_array_top.v
-vvp sim.out
-```
 
 ## References
 
