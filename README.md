@@ -23,17 +23,8 @@ Each PE accumulates one output element of `C` locally and never moves it out of 
 - Each PE computes `acc += a_in * b_in`, then forwards `a_in` to the PE on its right and `b_in` to the PE below it.
 - The partial sum `acc` (the output element `C[r][c]`) **stays stationary** inside PE `(r, c)` for the entire computation.
 
-```
-            B[0][0]  B[0][1]  B[0][2]  B[0][3]
-               |        |        |        |
-A[0][*] --> PE(0,0)--PE(0,1)--PE(0,2)--PE(0,3)
-               |        |        |        |
-A[1][*] --> PE(1,0)--PE(1,1)--PE(1,2)--PE(1,3)
-               |        |        |        |
-A[2][*] --> PE(2,0)--PE(2,1)--PE(2,2)--PE(2,3)
-               |        |        |        |
-A[3][*] --> PE(3,0)--PE(3,1)--PE(3,2)--PE(3,3)
-```
+<img width="681" height="657" alt="image" src="https://github.com/user-attachments/assets/0094a10d-37ff-4b07-968e-5e3088f3708e" />
+
 
 ### Skewing
 
